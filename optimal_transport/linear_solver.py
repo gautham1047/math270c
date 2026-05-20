@@ -157,9 +157,11 @@ def solve_schur_system(rhs, A_hat_m1, A_hat_m2, A_hat_rho, h, n1, n2, n3,
     S_sparse = build_schur_sparse(A_hat_m1, A_hat_m2, A_hat_rho, h, n1, n2, n3)
     M        = build_sgs_preconditioner(S_sparse)
 
-    delta_lam_flat, info = spla.cg(S_op, rhs.ravel(), rtol=tol, maxiter=maxiter, M=M)
+    iters = [0]
+    delta_lam_flat, _ = spla.cg(S_op, rhs.ravel(), rtol=tol, maxiter=maxiter, M=M,
+                                 callback=lambda _: iters.__setitem__(0, iters[0] + 1))
 
-    return delta_lam_flat.reshape(n1, n2, n3), info
+    return delta_lam_flat.reshape(n1, n2, n3), iters[0]
 
 
 # ---------------------------------------------------------------------------
