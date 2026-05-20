@@ -50,7 +50,7 @@ def prolong_solution(m1_c, m2_c, rho_free_c, lam_c, n1_f, n2_f, n3_f):
 
 def multilevel_sqp(levels, contrast, p=2, tol=1e-4,
                    cg_tol=1e-4, cg_maxiter=500,
-                   max_iter=100, verbose=True):
+                   max_iter=100, verbose=True, method='cg_sgs'):
     """
     Run SQP on successive grid levels with warm-starting.
 
@@ -80,7 +80,7 @@ def multilevel_sqp(levels, contrast, p=2, tol=1e-4,
             m1, m2, rho_free, lam, mu0, mu1, h, p=p,
             tol=tol, max_iter=max_iter,
             cg_tol=cg_tol, cg_maxiter=cg_maxiter,
-            verbose=verbose
+            verbose=verbose, method=method
         )
         all_stats.append(stats)
 

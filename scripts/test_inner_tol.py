@@ -2,11 +2,11 @@
 Test the SQP solver on the smallest grid (16x16x10) across a range of CG
 inner tolerances.  Run from the math270c directory:
 
-    python test_inner_tol.py
+    python scripts/test_inner_tol.py
 """
 
 import sys, os
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 import numpy as np
 from optimal_transport.test_images import make_images
@@ -49,9 +49,9 @@ def run(cg_tol):
 
     # CG iterations: first, middle, last accepted step
     accepted_stats = [s for s in stats if s['accepted']]
-    cg_first = accepted_stats[0]['cg_iters']  if accepted_stats else -1
-    cg_mid   = accepted_stats[len(accepted_stats)//2]['cg_iters'] if accepted_stats else -1
-    cg_last  = accepted_stats[-1]['cg_iters'] if accepted_stats else -1
+    cg_first = accepted_stats[0]['inner_iters']  if accepted_stats else -1
+    cg_mid   = accepted_stats[len(accepted_stats)//2]['inner_iters'] if accepted_stats else -1
+    cg_last  = accepted_stats[-1]['inner_iters'] if accepted_stats else -1
 
     return dict(
         cg_tol       = cg_tol,

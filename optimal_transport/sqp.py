@@ -5,7 +5,7 @@ Outer SQP loop for time-dependent optimal transport (Haber & Horesh 2015, Sec. 4
 import numpy as np
 from .grid import div_st
 from .objective import objective, grad_m, grad_rho, hessian_diag
-from .linear_solver import solve_schur_system, recover_dw
+from .linear_solver import solve_schur_system, recover_dw, solve_saddle_system_gmres
 from .filter import Filter
 
 
@@ -41,13 +41,18 @@ def _make_rho_full(mu0, mu1, rho_free):
 
 
 def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
-        tol=1e-4, max_iter=100, cg_tol=0.01, cg_maxiter=200,
-        max_backtracks=20, max_h_factor=1.3, verbose=True):
+        tol=1e-4, max_iter=100, cg_tol=5e-5, cg_maxiter=500,
+        max_backtracks=20, max_h_factor=1.3, hessian_eps=1e-8,
+        method='cg_sgs', gmres_tol=0.025, gmres_maxiter=50,
+        verbose=True):
     """
     SQP solver. Returns (m1, m2, rho_free, lam, stats).
 
+    method : 'cg_sgs'   — CG on Schur complement with SGS preconditioner (default)
+             'gmres_amg' — GMRES on full saddle-point system with AMG preconditioner
+
     stats : list of dicts with keys
-              iter, cg_iters, f, h_viol, alpha, kkt_w, kkt_lam
+              iter, inner_iters, f, h_viol, alpha, kkt_w, kkt_lam
     """
     n1, n2 = mu0.shape
     n3     = rho_free.shape[2] + 1
@@ -86,30 +91,35 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
             break
 
         # 3. Hessian diagonal
-        Ah_m1, Ah_m2, Ah_rho = hessian_diag(m1, m2, rho_full, h, p)
+        Ah_m1, Ah_m2, Ah_rho = hessian_diag(m1, m2, rho_full, h, p, eps=hessian_eps)
 
-        # 4. Schur complement RHS:  glam - D A_hat^{-1} grad_w L
-        inv_gm1 = gm1 / Ah_m1
-        inv_gm2 = gm2 / Ah_m2
-        inv_grho_full = np.zeros((n1, n2, n3 + 1))
-        inv_grho_full[:, :, 1:-1] = grho / Ah_rho
-
-        rhs = glam - div_st(inv_gm1, inv_gm2, inv_grho_full, h)
-
-        # 5. Solve for dlam
-        delta_lam, cg_info = solve_schur_system(
-            rhs, Ah_m1, Ah_m2, Ah_rho, h, n1, n2, n3,
-            tol=cg_tol, maxiter=cg_maxiter
-        )
-
-        # 6. Recover dw
-        dm1, dm2, drho = recover_dw(delta_lam, gm1, gm2, grho,
-                                    Ah_m1, Ah_m2, Ah_rho, h)
+        # 4-6. Inner linear solve (dispatch on method)
+        if method == 'cg_sgs':
+            # Reduced Schur system: S dlam = glam - D Â^{-1} grad_w L
+            inv_gm1 = gm1 / Ah_m1
+            inv_gm2 = gm2 / Ah_m2
+            inv_grho_full = np.zeros((n1, n2, n3 + 1))
+            inv_grho_full[:, :, 1:-1] = grho / Ah_rho
+            rhs = glam - div_st(inv_gm1, inv_gm2, inv_grho_full, h)
+            delta_lam, inner_iters = solve_schur_system(
+                rhs, Ah_m1, Ah_m2, Ah_rho, h, n1, n2, n3,
+                tol=cg_tol, maxiter=cg_maxiter
+            )
+            dm1, dm2, drho = recover_dw(delta_lam, gm1, gm2, grho,
+                                        Ah_m1, Ah_m2, Ah_rho, h)
+        elif method == 'gmres_amg':
+            # Full saddle-point system with Ruge-Stüben AMG preconditioner
+            dm1, dm2, drho, delta_lam, inner_iters = solve_saddle_system_gmres(
+                gm1, gm2, grho, glam,
+                Ah_m1, Ah_m2, Ah_rho, h, n1, n2, n3,
+                tol=gmres_tol, maxiter=gmres_maxiter,
+            )
+        else:
+            raise ValueError(f"Unknown method {method!r}. Use 'cg_sgs' or 'gmres_amg'.")
 
         # 7. Line search with filter
-        alpha     = 1.0
-        accepted  = False
-        cg_iters  = cg_info  # scipy returns iteration count or 0 on success
+        alpha    = 1.0
+        accepted = False
 
         reject_reason = None
         for _ in range(max_backtracks):
@@ -188,12 +198,13 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
 
         stats.append({
             'iter':          it,
-            'cg_iters':      cg_iters,
+            'inner_iters':   inner_iters,
             'f':             objective(m1, m2, _make_rho_full(mu0, mu1, rho_free), h, p),
             'h_viol':        kkt_lam,
             'alpha':         alpha,
             'kkt_w':         kkt_w,
             'kkt_lam':       kkt_lam,
+            'scale_lam':     scale_lam,
             'accepted':      accepted or restored,
             'reject_reason': ('restored' if restored else reject_reason) if not accepted else None,
         })

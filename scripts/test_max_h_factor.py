@@ -2,13 +2,13 @@
 Sweep max_h_factor on a given grid to find how tight the per-step h-increase
 cap should be.  Run from the math270c directory:
 
-    python test_max_h_factor.py                  # 16x16x10 (default)
-    python test_max_h_factor.py --grid 32        # 32x32x20
-    python test_max_h_factor.py --grid 64        # 64x64x40
+    python scripts/test_max_h_factor.py                  # 16x16x10 (default)
+    python scripts/test_max_h_factor.py --grid 32        # 32x32x20
+    python scripts/test_max_h_factor.py --grid 64        # 64x64x40
 """
 
 import sys, os, argparse
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from optimal_transport.test_images import make_images
 from optimal_transport.sqp import initialize, sqp

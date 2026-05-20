@@ -8,21 +8,23 @@ Each plot has three lines, one per grid.  X-axis is log-scale cg_tol,
 oriented so tighter tolerances are on the right.
 
 Run from the math270c directory:
-    python test_cg_sweep.py            # all three grids
-    python test_cg_sweep.py --no-64   # skip 64x64x40 (saves ~10-30 min)
+    python scripts/test_cg_sweep.py            # all three grids
+    python scripts/test_cg_sweep.py --no-64   # skip 64x64x40 (saves ~10-30 min)
 
 Results are saved to output/cg_sweep/results.json so you can re-plot
 without re-running the solver.
 """
 
 import sys, os, time, json, argparse
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from optimal_transport.test_images import make_images
 from optimal_transport.sqp import initialize, sqp
+
+_REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -61,7 +63,7 @@ def run_one(grid, cg_tol):
     elapsed = time.perf_counter() - t0
 
     sqp_iters = len(stats)
-    total_cg  = sum(s['cg_iters'] for s in stats)
+    total_cg  = sum(s['inner_iters'] for s in stats)
     converged = sqp_iters < MAX_ITER
 
     return dict(
@@ -161,7 +163,7 @@ def main():
 
     grids = ALL_GRIDS[:2] if args.no_64 else ALL_GRIDS
 
-    out_dir = os.path.join("output", "cg_sweep")
+    out_dir = os.path.join(_REPO, "output", "cg_sweep")
     os.makedirs(out_dir, exist_ok=True)
 
     print(f"Grids: {[f'{g[0]}x{g[1]}x{g[2]}' for g in grids]}")
