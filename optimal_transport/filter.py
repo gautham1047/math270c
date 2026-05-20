@@ -7,7 +7,7 @@ any existing entry (f_j, h_j) in the filter (with margins gamma_f, gamma_h).
 
 
 class Filter:
-    def __init__(self, gamma_f=1e-5, gamma_h=1e-5, beta=10.0, max_h_factor=2.0):
+    def __init__(self, gamma_f=1e-5, gamma_h=1e-5, beta=10.0, max_h_factor=1.3):
         self.entries      = []          # list of (f, h) tuples
         self.gamma_f      = gamma_f
         self.gamma_h      = gamma_h
@@ -16,7 +16,7 @@ class Filter:
         self.h_max        = None
         self.h_current    = None        # most recently accepted constraint violation
 
-    def initialize(self, f_0, h_0):
+    def initialize(self, h_0):
         self.entries   = []
         self.h_max     = self.beta * h_0
         self.h_current = h_0

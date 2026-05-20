@@ -42,7 +42,7 @@ def _make_rho_full(mu0, mu1, rho_free):
 
 def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
         tol=1e-4, max_iter=100, cg_tol=0.01, cg_maxiter=200,
-        max_backtracks=20, max_h_factor=2.0, verbose=True):
+        max_backtracks=20, max_h_factor=1.3, verbose=True):
     """
     SQP solver. Returns (m1, m2, rho_free, lam, stats).
 
@@ -53,11 +53,10 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
     n3     = rho_free.shape[2] + 1
 
     rho_full = _make_rho_full(mu0, mu1, rho_free)
-    f0       = objective(m1, m2, rho_full, h, p)
     h0       = np.sum(np.abs(div_st(m1, m2, rho_full, h)))
 
     filt = Filter(max_h_factor=max_h_factor)
-    filt.initialize(f0, h0)
+    filt.initialize(h0)
 
     # Reference scales for convergence check
     scale_lam = max(h0, 1e-10)
@@ -149,8 +148,43 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
                 reject_reason = 'filter'
                 alpha *= 0.5
 
-        if not accepted and verbose:
-            print(f"  Warning: line search failed at iter {it} ({reject_reason}), step rejected.")
+        # Restoration phase: if line search failed completely, try a pure
+        # h-reduction step (ignore f).  Guarantees progress whenever the Newton
+        # direction has any feasibility-improving component.
+        restored = False
+        if not accepted:
+            if verbose:
+                print(f"  Warning: line search failed at iter {it} ({reject_reason}), "
+                      f"attempting restoration.")
+            alpha_r = 1.0
+            for _ in range(max_backtracks):
+                m1_r  = m1       + alpha_r * dm1
+                m2_r  = m2       + alpha_r * dm2
+                rho_r = rho_free + alpha_r * drho
+
+                if rho_r.min() <= 0:
+                    alpha_r *= 0.5
+                    continue
+
+                rho_full_r = _make_rho_full(mu0, mu1, rho_r)
+                h_r = np.sum(np.abs(div_st(m1_r, m2_r, rho_full_r, h)))
+
+                if h_r < filt.h_current:
+                    f_r = objective(m1_r, m2_r, rho_full_r, h, p)
+                    filt.add(f_r, h_r)
+                    filt.accept(h_r)
+                    m1, m2, rho_free = m1_r, m2_r, rho_r
+                    lam = lam + alpha_r * delta_lam
+                    alpha    = alpha_r
+                    restored = True
+                    if verbose:
+                        print(f"  Restored at alpha={alpha_r:.3e}  h={h_r:.3e}")
+                    break
+
+                alpha_r *= 0.5
+
+            if not accepted and not restored and verbose:
+                print(f"  Warning: restoration also failed at iter {it}, step skipped.")
 
         stats.append({
             'iter':          it,
@@ -160,8 +194,8 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
             'alpha':         alpha,
             'kkt_w':         kkt_w,
             'kkt_lam':       kkt_lam,
-            'accepted':      accepted,
-            'reject_reason': reject_reason if not accepted else None,
+            'accepted':      accepted or restored,
+            'reject_reason': ('restored' if restored else reject_reason) if not accepted else None,
         })
 
     return m1, m2, rho_free, lam, stats
