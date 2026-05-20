@@ -4,3 +4,4 @@ hw1/
 hw2/
 output/
 *.md
+!HANDOFF.md
