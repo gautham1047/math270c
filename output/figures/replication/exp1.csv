@@ -1,0 +1,4 @@
+grid,sqp_iters,inner_first,inner_mid,inner_last
+16x16x10,6,24,17,16
+32x32x20,6,44,31,31
+64x64x40,7,82,60,60

@@ -3,5 +3,6 @@ final_project_fail/
 hw1/
 hw2/
 output/
+!output/figures/
 *.md
-!HANDOFF.md
+HANDOFF.md

@@ -53,29 +53,40 @@ def _build_derivative_matrices(n1, n2, n3, h):
     def cell_idx(i, j, k):
         return i * n2 * n3 + j * n3 + k
 
-    # ----- D1: (n1+1)*n2*n3 x-face DOFs -> N cells -----
-    N_m1 = (n1 + 1) * n2 * n3
+    # ----- D1: (n1-1)*n2*n3 interior x-face DOFs -> N cells (no-flux BC) -----
+    # Spatial boundary faces (i=0 and i=n1) are fixed to zero; only interior
+    # faces i=1..n1-1 appear as DOFs, re-indexed 0..n1-2.
+    N_m1 = (n1 - 1) * n2 * n3
     rows, cols, vals = [], [], []
     for i in range(n1):
         for j in range(n2):
             for k in range(n3):
                 c = cell_idx(i, j, k)
-                # face (i+1,j,k) gets +1/h, face (i,j,k) gets -1/h
-                f_plus  = (i + 1) * n2 * n3 + j * n3 + k
-                f_minus = i       * n2 * n3 + j * n3 + k
-                rows += [c, c]; cols += [f_plus, f_minus]; vals += [1/h, -1/h]
+                # right interior face (between cells i and i+1): new index i
+                if i < n1 - 1:
+                    f_plus = i * n2 * n3 + j * n3 + k
+                    rows.append(c); cols.append(f_plus); vals.append(1/h)
+                # left interior face (between cells i-1 and i): new index i-1
+                if i > 0:
+                    f_minus = (i - 1) * n2 * n3 + j * n3 + k
+                    rows.append(c); cols.append(f_minus); vals.append(-1/h)
     D1 = sp.csr_matrix((vals, (rows, cols)), shape=(N, N_m1))
 
-    # ----- D2: n1*(n2+1)*n3 y-face DOFs -> N cells -----
-    N_m2 = n1 * (n2 + 1) * n3
+    # ----- D2: n1*(n2-1)*n3 interior y-face DOFs -> N cells (no-flux BC) -----
+    # Spatial boundary faces (j=0 and j=n2) are fixed to zero; only interior
+    # faces j=1..n2-1 appear as DOFs, re-indexed 0..n2-2.
+    N_m2 = n1 * (n2 - 1) * n3
     rows, cols, vals = [], [], []
     for i in range(n1):
         for j in range(n2):
             for k in range(n3):
                 c = cell_idx(i, j, k)
-                f_plus  = i * (n2 + 1) * n3 + (j + 1) * n3 + k
-                f_minus = i * (n2 + 1) * n3 + j       * n3 + k
-                rows += [c, c]; cols += [f_plus, f_minus]; vals += [1/h, -1/h]
+                if j < n2 - 1:
+                    f_plus = i * (n2 - 1) * n3 + j * n3 + k
+                    rows.append(c); cols.append(f_plus); vals.append(1/h)
+                if j > 0:
+                    f_minus = i * (n2 - 1) * n3 + (j - 1) * n3 + k
+                    rows.append(c); cols.append(f_minus); vals.append(-1/h)
     D2 = sp.csr_matrix((vals, (rows, cols)), shape=(N, N_m2))
 
     # ----- D3_free: n1*n2*(n3-1) free t-face DOFs -> N cells -----
@@ -110,8 +121,8 @@ def build_schur_sparse(A_hat_m1, A_hat_m2, A_hat_rho, h, n1, n2, n3):
     """
     D1, D2, D3f = _build_derivative_matrices(n1, n2, n3, h)
 
-    inv_m1  = sp.diags(1.0 / A_hat_m1.ravel())
-    inv_m2  = sp.diags(1.0 / A_hat_m2.ravel())
+    inv_m1  = sp.diags(1.0 / A_hat_m1[1:-1, :, :].ravel())   # interior x-faces
+    inv_m2  = sp.diags(1.0 / A_hat_m2[:, 1:-1, :].ravel())   # interior y-faces
     inv_rho = sp.diags(1.0 / A_hat_rho.ravel())
 
     S = (D1 @ inv_m1 @ D1.T

@@ -41,7 +41,7 @@ def _make_rho_full(mu0, mu1, rho_free):
 
 
 def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
-        tol=1e-4, max_iter=100, cg_tol=5e-5, cg_maxiter=500,
+        tol=1e-4, tol_w=None, max_iter=100, cg_tol=5e-5, cg_maxiter=500,
         max_backtracks=20, max_h_factor=1.3, hessian_eps=1e-8,
         method='cg_sgs', gmres_tol=0.025, gmres_maxiter=50,
         verbose=True):
@@ -57,14 +57,28 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
     n1, n2 = mu0.shape
     n3     = rho_free.shape[2] + 1
 
+    # Dual tolerance: looser than primal by default.  Starting from m=0 the
+    # first Newton step is a pure-2D momentum correction (drho≈0) that sets
+    # scale_w to an artificially large value; sqrt(tol) keeps the dual check
+    # strict enough to block the false 1-step convergence while still allowing
+    # practical convergence in O(100) iterations for isotropic grids.
+    if tol_w is None:
+        tol_w = 10 * np.sqrt(tol)
+
     rho_full = _make_rho_full(mu0, mu1, rho_free)
     h0       = np.sum(np.abs(div_st(m1, m2, rho_full, h)))
 
     filt = Filter(max_h_factor=max_h_factor)
     filt.initialize(h0)
 
-    # Reference scales for convergence check
+    # Reference scales for convergence check.
+    # scale_w uses a running max because kkt_w ≈ 0 at the m=0 initial point
+    # (the objective gradient vanishes there), so we cannot use the initial
+    # value as a scale.  After the first Newton step m becomes non-zero and
+    # kkt_w rises to its "natural" magnitude; subsequent steps must reduce it
+    # below tol * that peak before we declare dual feasibility.
     scale_lam = max(h0, 1e-10)
+    scale_w   = 1e-10  # updated each iteration to running max of kkt_w
 
     stats = []
 
@@ -76,16 +90,28 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
         grho     = grad_rho(m1, m2, rho_full, lam, h, p)
         glam     = div_st(m1, m2, rho_full, h)
 
-        kkt_w   = np.linalg.norm(gm1) + np.linalg.norm(gm2) + np.linalg.norm(grho)
+        # Dual residual: interior faces only.  Boundary x/y faces (index 0 and
+        # n1/n2) carry m=0 fixed by the no-flux BC, not by the optimality
+        # condition, so D^T λ at those faces is permanently non-zero and must
+        # not be included in the KKT check.  grho already covers only free
+        # interior t-faces (shape n1×n2×(n3-1)).
+        kkt_w   = (np.linalg.norm(gm1[1:-1, :, :])
+                 + np.linalg.norm(gm2[:, 1:-1, :])
+                 + np.linalg.norm(grho))
         kkt_lam = np.sum(np.abs(glam))
+
+        scale_w = max(scale_w, kkt_w)   # track peak to normalise dual residual
 
         f_cur = objective(m1, m2, rho_full, h, p)
         if verbose:
-            print(f"  SQP {it:3d}: f={f_cur:.6e}  |C|={kkt_lam:.3e}  |grad_w|={kkt_w:.3e}"
-                  f"  filt={len(filt.entries)}")
+            print(f"  SQP {it:3d}: f={f_cur:.6e}  |C|={kkt_lam:.3e}  "
+                  f"|grad_w|/peak={kkt_w/scale_w:.3e}  filt={len(filt.entries)}")
 
-        # 2. Convergence check (primal feasibility only — kkt_w is un-normalised)
-        if kkt_lam / scale_lam < tol:
+        # 2. Convergence: both primal feasibility and dual feasibility must be met.
+        # Checking only |C| is insufficient — at m=0 the objective gradient is
+        # zero so one Newton step can satisfy the constraint while leaving rho on
+        # the wrong (linear-interpolation) path rather than the OT geodesic.
+        if kkt_lam / scale_lam < tol and kkt_w / scale_w < tol_w:
             if verbose:
                 print(f"  Converged at iter {it}.")
             break
@@ -203,6 +229,7 @@ def sqp(m1, m2, rho_free, lam, mu0, mu1, h, p=2,
             'h_viol':        kkt_lam,
             'alpha':         alpha,
             'kkt_w':         kkt_w,
+            'scale_w':       scale_w,
             'kkt_lam':       kkt_lam,
             'scale_lam':     scale_lam,
             'accepted':      accepted or restored,

@@ -31,7 +31,7 @@ from optimal_transport.sqp import initialize, sqp
 _REPO    = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 OUTDIR   = os.path.join(_REPO, 'output', 'new_problems')
 GRIDS    = [(16, 16, 10), (32, 32, 20), (64, 64, 40)]
-GIF_GRID = (16, 16, 10)
+GIF_GRID = (32, 32, 20)
 
 CASES = [
     ('asymmetric_gaussian', 'Asymmetric Gaussian',  make_asymmetric_gaussian),
@@ -133,7 +133,7 @@ def full_run(grids=None):
                   f'|C|={stats[-1]["kkt_lam"]:.2e}')
             all_stats.append(stats)
 
-        # plot_convergence(case_name, title, all_stats, grids)
+        plot_convergence(case_name, title, all_stats, grids)
 
         if GIF_GRID in grids:
             n1, n2, n3 = GIF_GRID

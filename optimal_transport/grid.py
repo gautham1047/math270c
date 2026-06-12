@@ -33,17 +33,13 @@ def grad_st(lam, h):
     """
     n1, n2, n3 = lam.shape
 
-    # D1^T: x-gradient onto x-faces
+    # D1^T: x-gradient onto x-faces (no-flux BC: spatial boundary faces fixed to zero)
     g_m1 = np.zeros((n1 + 1, n2, n3))
     g_m1[1:-1, :, :] = (lam[:-1, :, :] - lam[1:, :, :]) / h
-    g_m1[0,    :, :] = -lam[0,  :, :] / h
-    g_m1[-1,   :, :] =  lam[-1, :, :] / h
 
-    # D2^T: y-gradient onto y-faces
+    # D2^T: y-gradient onto y-faces (no-flux BC: spatial boundary faces fixed to zero)
     g_m2 = np.zeros((n1, n2 + 1, n3))
     g_m2[:, 1:-1, :] = (lam[:, :-1, :] - lam[:, 1:, :]) / h
-    g_m2[:, 0,    :] = -lam[:, 0,  :] / h
-    g_m2[:, -1,   :] =  lam[:, -1, :] / h
 
     # D3^T: t-gradient onto free t-faces (indices 1..n3-1)
     # (D3^T lam)[k] = (lam[:,:,k-1] - lam[:,:,k]) / h  for k=1..n3-1
