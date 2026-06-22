@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 from ._common import (
     GRIDS, GRID_COLORS, GRID_MARKERS,
-    CG_TOL, SQP_TOL,
+    CG_TOL, SQP_TOL, GMRES_TOL,
     apply_style, out_dir, save_fig,
 )
 from ..test_images import make_images
@@ -42,13 +42,16 @@ def _cg_maxiter(n1, n2, n3):
     """Scale CG budget with system size so larger grids get sufficient iterations."""
     return max(500, n1 * n2 * n3 // 50)
 
+GMRES_MAXITER_E1 = 100
+
 
 # ── Experiment 1: mesh independence ──────────────────────────────────────────
 
-def run_exp1(grids, verbose=False):
+def run_exp1(grids, verbose=False, method='cg_sgs'):
     """
     Run paper test case (contrast=10, p=2) on *grids*.
     Returns list of dicts: {grid, sqp_iters, inner_first, inner_mid, inner_last}.
+    method: 'cg_sgs' (default) or 'gmres_amg'.
     """
     results = []
     for grid in grids:
@@ -56,12 +59,13 @@ def run_exp1(grids, verbose=False):
         h = 1.0 / n1
         mu0, mu1 = make_images(n1, n2, contrast=10)
         m1, m2, rho_free, lam = initialize(mu0, mu1, n3, h)
-        print(f'  Exp 1  {n1}×{n2}×{n3} …', end=' ', flush=True)
-        _, _, _, _, stats = sqp(
-            m1, m2, rho_free, lam, mu0, mu1, h,
-            p=2, tol=SQP_TOL, cg_tol=CG_TOL, cg_maxiter=_cg_maxiter(n1, n2, n3),
-            method='cg_sgs', verbose=verbose,
-        )
+        print(f'  Exp 1  {n1}×{n2}×{n3} ({method}) …', end=' ', flush=True)
+        kw = dict(p=2, tol=SQP_TOL, method=method, verbose=verbose)
+        if method == 'gmres_amg':
+            kw.update(gmres_tol=GMRES_TOL, gmres_maxiter=GMRES_MAXITER_E1)
+        else:
+            kw.update(cg_tol=CG_TOL, cg_maxiter=_cg_maxiter(n1, n2, n3))
+        _, _, _, _, stats = sqp(m1, m2, rho_free, lam, mu0, mu1, h, **kw)
         n_iter   = len(stats)
         ic       = [s['inner_iters'] for s in stats]
         i_first  = ic[0]           if n_iter > 0 else 0
@@ -314,10 +318,11 @@ def plot_pcont(p_values, primal, dual, directory):
 
 # ── CSVs ──────────────────────────────────────────────────────────────────────
 
-def dump_csvs(exp1_results, exp3_data, directory):
-    # exp1.csv
+def dump_csvs(exp1_results, exp3_data, directory, exp1_method='cg_sgs'):
+    # exp1.csv or exp1_gmres.csv depending on solver
     if exp1_results:
-        path = os.path.join(directory, 'exp1.csv')
+        fname = 'exp1_gmres.csv' if exp1_method == 'gmres_amg' else 'exp1.csv'
+        path = os.path.join(directory, fname)
         with open(path, 'w', newline='', encoding='utf-8') as f:
             w = csv.writer(f)
             w.writerow(['grid', 'sqp_iters', 'inner_first', 'inner_mid', 'inner_last'])
@@ -358,11 +363,14 @@ def main():
         help='Which experiments to run (default: all)',
     )
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--gmres', action='store_true',
+                        help='Use gmres_amg solver for Exp 1; saves exp1_gmres.csv')
     args = parser.parse_args()
 
-    exps      = set(args.exp)
-    directory = out_dir('replication')
-    grids_e1  = GRIDS[:2] if args.no_64 else GRIDS
+    exps        = set(args.exp)
+    exp1_method = 'gmres_amg' if args.gmres else 'cg_sgs'
+    directory   = out_dir('replication')
+    grids_e1    = GRIDS[:2] if args.no_64 else GRIDS
 
     print(f'Output: {directory}')
     print(f'Experiments: {sorted(exps)}')
@@ -374,7 +382,7 @@ def main():
     # ── Exp 1 ─────────────────────────────────────────────────────────────────
     if '1' in exps:
         print('\n=== Experiment 1: mesh independence ===')
-        exp1_results = run_exp1(grids_e1, verbose=args.verbose)
+        exp1_results = run_exp1(grids_e1, verbose=args.verbose, method=exp1_method)
 
     # ── Exp 2 ─────────────────────────────────────────────────────────────────
     if '2' in exps:
@@ -408,7 +416,7 @@ def main():
 
     # ── CSVs ──────────────────────────────────────────────────────────────────
     print('\nWriting CSVs …')
-    dump_csvs(exp1_results, exp3_data, directory)
+    dump_csvs(exp1_results, exp3_data, directory, exp1_method=exp1_method)
 
     print('\nDone.')
 
